@@ -163,6 +163,7 @@ export const groqEmbeddingService: EmbeddingServiceInterface = {
       model: "nomic-embed-text-v1.5",
       input: text.slice(0, 8000),
     });
-    return { embedding: res.data[0]?.embedding ?? [] };
+    const embedding = res.data[0]?.embedding ?? [];
+    return { embedding, dimensions: embedding.length };
   },
 };
