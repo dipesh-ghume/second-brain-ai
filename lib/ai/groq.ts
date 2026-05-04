@@ -156,16 +156,13 @@ ${truncated}`,
   },
 };
 
-/**
- * Groq does not offer an embedding API. When using Groq as the AI provider,
- * embeddings fall back to Ollama (local dev) or must be disabled in production.
- * For cloud deployment, we use a lightweight local embedding approach via
- * the Ollama embedding service as fallback.
- */
 export const groqEmbeddingService: EmbeddingServiceInterface = {
-  async generateEmbedding(_text: string): Promise<EmbeddingResult> {
-    throw new Error(
-      "Groq does not support embeddings. Set EMBEDDING_PROVIDER=ollama for local dev, or use a dedicated embedding service."
-    );
+  async generateEmbedding(text: string): Promise<EmbeddingResult> {
+    const client = getClient();
+    const res = await client.embeddings.create({
+      model: "nomic-embed-text-v1.5",
+      input: text.slice(0, 8000),
+    });
+    return { embedding: res.data[0]?.embedding ?? [] };
   },
 };

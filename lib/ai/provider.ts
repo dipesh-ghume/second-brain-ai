@@ -1,7 +1,7 @@
 import type { AIServiceInterface, AIResponse, AIProviderType, TaskType, EmbeddingServiceInterface, EmbeddingResult } from "./types";
 import { ollamaService, ollamaEmbeddingService } from "./ollama";
 import { openaiService, openaiEmbeddingService } from "./openai";
-import { groqService } from "./groq";
+import { groqService, groqEmbeddingService } from "./groq";
 
 function getProviderType(): AIProviderType {
   return (process.env.AI_PROVIDER as AIProviderType) || "ollama";
@@ -41,7 +41,9 @@ function selectEmbeddingProvider(): EmbeddingServiceInterface {
   if ((providerType === "openai" || providerType === "smart") && hasOpenAI()) {
     return openaiEmbeddingService;
   }
-  // Groq has no embedding API — use Ollama locally or OpenAI if available
+  if (providerType === "groq" && hasGroq()) {
+    return groqEmbeddingService;
+  }
   if (providerType === "groq" && hasOpenAI()) {
     return openaiEmbeddingService;
   }
@@ -65,8 +67,18 @@ function getFallbackProvider(primary: AIServiceInterface): AIServiceInterface | 
 }
 
 function getFallbackEmbeddingProvider(primary: EmbeddingServiceInterface): EmbeddingServiceInterface | null {
-  if (primary === ollamaEmbeddingService && hasOpenAI()) return openaiEmbeddingService;
-  if (primary === openaiEmbeddingService) return ollamaEmbeddingService;
+  if (primary === ollamaEmbeddingService) {
+    if (hasGroq()) return groqEmbeddingService;
+    if (hasOpenAI()) return openaiEmbeddingService;
+  }
+  if (primary === groqEmbeddingService) {
+    if (hasOpenAI()) return openaiEmbeddingService;
+    return ollamaEmbeddingService;
+  }
+  if (primary === openaiEmbeddingService) {
+    if (hasGroq()) return groqEmbeddingService;
+    return ollamaEmbeddingService;
+  }
   return null;
 }
 
