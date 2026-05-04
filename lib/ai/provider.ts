@@ -1,7 +1,8 @@
 import type { AIServiceInterface, AIResponse, AIProviderType, TaskType, EmbeddingServiceInterface, EmbeddingResult } from "./types";
 import { ollamaService, ollamaEmbeddingService } from "./ollama";
 import { openaiService, openaiEmbeddingService } from "./openai";
-import { groqService, groqEmbeddingService } from "./groq";
+import { groqService } from "./groq";
+import { voyageEmbeddingService } from "./voyage";
 
 function getProviderType(): AIProviderType {
   return (process.env.AI_PROVIDER as AIProviderType) || "ollama";
@@ -13,6 +14,10 @@ function hasOpenAI(): boolean {
 
 function hasGroq(): boolean {
   return !!process.env.GROQ_API_KEY;
+}
+
+function hasVoyage(): boolean {
+  return !!process.env.VOYAGE_API_KEY;
 }
 
 function isCloud(): boolean {
@@ -45,10 +50,11 @@ function selectProvider(taskType: TaskType, textLength: number = 0): AIServiceIn
 }
 
 function selectEmbeddingProvider(): EmbeddingServiceInterface {
+  if (hasVoyage()) return voyageEmbeddingService;
   if (hasOpenAI()) return openaiEmbeddingService;
 
   if (isCloud()) {
-    return groqEmbeddingService;
+    throw new Error("No cloud embedding provider. Set VOYAGE_API_KEY (free) or OPENAI_API_KEY.");
   }
 
   return ollamaEmbeddingService;
@@ -68,7 +74,11 @@ function getFallbackProvider(primary: AIServiceInterface): AIServiceInterface | 
 }
 
 function getFallbackEmbeddingProvider(primary: EmbeddingServiceInterface): EmbeddingServiceInterface | null {
+  if (primary === voyageEmbeddingService && hasOpenAI()) return openaiEmbeddingService;
+  if (primary === voyageEmbeddingService && !isCloud()) return ollamaEmbeddingService;
+  if (primary === openaiEmbeddingService && hasVoyage()) return voyageEmbeddingService;
   if (primary === openaiEmbeddingService && !isCloud()) return ollamaEmbeddingService;
+  if (primary === ollamaEmbeddingService && hasVoyage()) return voyageEmbeddingService;
   if (primary === ollamaEmbeddingService && hasOpenAI()) return openaiEmbeddingService;
   return null;
 }
