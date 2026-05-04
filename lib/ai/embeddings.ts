@@ -28,7 +28,23 @@ export async function generateAndStoreEmbedding(
   content: string,
   userId: string
 ): Promise<void> {
-  const result = await embeddings.generate(content);
+  let result;
+  try {
+    result = await embeddings.generate(content);
+  } catch {
+    console.warn("Embedding generation unavailable, skipping for:", sourceId);
+    const storedContent = content.slice(0, 5000);
+    await prisma.$executeRaw`
+      INSERT INTO "Embedding" (id, content, "sourceType", "sourceId", "userId", "createdAt")
+      VALUES (gen_random_uuid(), ${storedContent}, ${sourceType}::"SourceType", ${sourceId}, ${userId}, NOW())
+      ON CONFLICT ("sourceId") DO UPDATE SET
+        content    = EXCLUDED.content,
+        "userId"   = EXCLUDED."userId",
+        "createdAt" = NOW()
+    `;
+    return;
+  }
+
   if (!result.embedding.length) {
     throw new Error("Embedding generation returned empty vector");
   }
@@ -68,13 +84,50 @@ export async function findSimilar(
   minSimilarity: number = 0.0,
   userId: string
 ): Promise<SimilarResult[]> {
-  const result = await embeddings.generate(queryText);
-  if (!result.embedding.length) return [];
+  try {
+    const result = await embeddings.generate(queryText);
+    if (result.embedding.length) {
+      const prepared = prepareVector(result.embedding);
+      const vecSql = vectorToSql(prepared);
 
-  const prepared = prepareVector(result.embedding);
-  const vecSql = vectorToSql(prepared);
+      await prisma.$executeRaw`SET hnsw.ef_search = 80`;
 
-  await prisma.$executeRaw`SET hnsw.ef_search = 80`;
+      const rows = await prisma.$queryRaw<SimilarResult[]>`
+        SELECT
+          id,
+          content,
+          "sourceType" AS "sourceType",
+          "sourceId"   AS "sourceId",
+          1 - (embedding <=> ${vecSql}::vector) AS similarity
+        FROM "Embedding"
+        WHERE embedding IS NOT NULL AND "userId" = ${userId}
+        ORDER BY embedding <=> ${vecSql}::vector
+        LIMIT ${limit}
+      `;
+
+      return rows.filter((r) => r.similarity >= minSimilarity);
+    }
+  } catch {
+    console.warn("Vector search unavailable, falling back to text search");
+  }
+
+  return findSimilarByText(queryText, limit, userId);
+}
+
+async function findSimilarByText(
+  queryText: string,
+  limit: number,
+  userId: string
+): Promise<SimilarResult[]> {
+  const searchTerms = queryText
+    .split(/\s+/)
+    .filter((t) => t.length > 2)
+    .map((t) => t.replace(/[^a-zA-Z0-9]/g, ""))
+    .filter(Boolean);
+
+  if (searchTerms.length === 0) return [];
+
+  const likePattern = `%${searchTerms.join("%")}%`;
 
   const rows = await prisma.$queryRaw<SimilarResult[]>`
     SELECT
@@ -82,14 +135,17 @@ export async function findSimilar(
       content,
       "sourceType" AS "sourceType",
       "sourceId"   AS "sourceId",
-      1 - (embedding <=> ${vecSql}::vector) AS similarity
+      0.5 AS similarity
     FROM "Embedding"
-    WHERE embedding IS NOT NULL AND "userId" = ${userId}
-    ORDER BY embedding <=> ${vecSql}::vector
+    WHERE "userId" = ${userId}
+      AND (
+        content ILIKE ${likePattern}
+        OR content ILIKE ${"%" + searchTerms[0] + "%"}
+      )
     LIMIT ${limit}
   `;
 
-  return rows.filter((r) => r.similarity >= minSimilarity);
+  return rows;
 }
 
 export async function getEmbeddingStats(userId: string): Promise<{

@@ -157,13 +157,7 @@ ${truncated}`,
 };
 
 export const groqEmbeddingService: EmbeddingServiceInterface = {
-  async generateEmbedding(text: string): Promise<EmbeddingResult> {
-    const client = getClient();
-    const res = await client.embeddings.create({
-      model: "nomic-embed-text-v1_5",
-      input: text.slice(0, 8000),
-    });
-    const embedding = res.data[0]?.embedding ?? [];
-    return { embedding, dimensions: embedding.length };
+  async generateEmbedding(): Promise<EmbeddingResult> {
+    throw new Error("Groq does not support embeddings. Text search will be used as fallback.");
   },
 };
