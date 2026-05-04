@@ -65,8 +65,8 @@ body {
 }
 
 .prose-editor .ProseMirror {
-  min-height: 360px;
-  max-height: 60vh;
+  min-height: 500px;
+  max-height: 70vh;
   overflow-y: auto;
   outline: none;
   padding: 1.25rem 1.5rem;

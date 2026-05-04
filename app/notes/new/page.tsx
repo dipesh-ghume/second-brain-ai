@@ -63,28 +63,18 @@ export default function NewNotePage() {
         </div>
       )}
 
-      <div
-        className="rounded-xl border overflow-hidden shadow-sm"
-        style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-primary)" }}
-      >
-        <div className="px-6 pt-5 pb-3">
-          <input
-            type="text"
-            placeholder="Give your note a title..."
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="w-full text-xl font-semibold bg-transparent border-none outline-none placeholder:font-normal"
-            style={{
-              color: "var(--text-primary)",
-            }}
-          />
-          <div className="mt-3 h-px" style={{ backgroundColor: "var(--border)" }} />
-        </div>
-
-        <div className="px-2 pb-2">
-          <NoteEditor content={content} onChange={setContent} placeholder="Start writing your thoughts..." />
-        </div>
+      <div className="mb-4">
+        <input
+          type="text"
+          placeholder="Give your note a title..."
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="w-full text-2xl font-bold bg-transparent border-none outline-none placeholder:font-normal placeholder:text-[var(--text-muted)]"
+          style={{ color: "var(--text-primary)" }}
+        />
       </div>
+
+      <NoteEditor content={content} onChange={setContent} placeholder="Start writing your thoughts..." />
     </div>
   );
 }
