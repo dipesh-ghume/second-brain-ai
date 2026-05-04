@@ -9,7 +9,7 @@ export interface EmbeddingResult {
   dimensions: number;
 }
 
-export type AIProviderType = "openai" | "ollama" | "smart";
+export type AIProviderType = "openai" | "ollama" | "groq" | "smart";
 export type TaskType = "summarize" | "extract_tags" | "insights" | "weekly_report" | "search_answer" | "action_items" | "general";
 export type TaskComplexity = "simple" | "moderate" | "complex";
 

@@ -1,6 +1,7 @@
 import type { AIServiceInterface, AIResponse, AIProviderType, TaskType, EmbeddingServiceInterface, EmbeddingResult } from "./types";
 import { ollamaService, ollamaEmbeddingService } from "./ollama";
 import { openaiService, openaiEmbeddingService } from "./openai";
+import { groqService } from "./groq";
 
 function getProviderType(): AIProviderType {
   return (process.env.AI_PROVIDER as AIProviderType) || "ollama";
@@ -10,19 +11,27 @@ function hasOpenAI(): boolean {
   return !!process.env.OPENAI_API_KEY;
 }
 
+function hasGroq(): boolean {
+  return !!process.env.GROQ_API_KEY;
+}
+
 function selectProvider(taskType: TaskType, textLength: number = 0): AIServiceInterface {
   const providerType = getProviderType();
 
+  if (providerType === "groq" && hasGroq()) return groqService;
+  if (providerType === "groq") return ollamaService;
   if (providerType === "openai" && hasOpenAI()) return openaiService;
   if (providerType === "openai") return ollamaService;
   if (providerType === "ollama") return ollamaService;
 
-  // "smart" mode: use OpenAI for complex tasks if available
+  // "smart" mode: use best available provider for complex tasks
   if (taskType === "weekly_report" || taskType === "insights" || taskType === "search_answer") {
     if (hasOpenAI()) return openaiService;
+    if (hasGroq()) return groqService;
   }
   if (taskType === "action_items" || (taskType === "summarize" && textLength > 4000)) {
     if (hasOpenAI()) return openaiService;
+    if (hasGroq()) return groqService;
   }
   return ollamaService;
 }
@@ -32,12 +41,26 @@ function selectEmbeddingProvider(): EmbeddingServiceInterface {
   if ((providerType === "openai" || providerType === "smart") && hasOpenAI()) {
     return openaiEmbeddingService;
   }
+  // Groq has no embedding API — use Ollama locally or OpenAI if available
+  if (providerType === "groq" && hasOpenAI()) {
+    return openaiEmbeddingService;
+  }
   return ollamaEmbeddingService;
 }
 
 function getFallbackProvider(primary: AIServiceInterface): AIServiceInterface | null {
-  if (primary === ollamaService && hasOpenAI()) return openaiService;
-  if (primary === openaiService) return ollamaService;
+  if (primary === ollamaService) {
+    if (hasGroq()) return groqService;
+    if (hasOpenAI()) return openaiService;
+  }
+  if (primary === groqService) {
+    if (hasOpenAI()) return openaiService;
+    return ollamaService;
+  }
+  if (primary === openaiService) {
+    if (hasGroq()) return groqService;
+    return ollamaService;
+  }
   return null;
 }
 
