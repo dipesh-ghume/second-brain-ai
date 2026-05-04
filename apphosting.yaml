@@ -1,0 +1,19 @@
+runConfig:
+  minInstances: 0
+  maxInstances: 1
+  concurrency: 80
+  cpu: 1
+  memoryMiB: 512
+
+env:
+  - variable: DATABASE_URL
+    secret: DATABASE_URL
+
+  - variable: AI_PROVIDER
+    value: openai
+
+  - variable: OPENAI_API_KEY
+    secret: OPENAI_API_KEY
+
+  - variable: NEXT_PUBLIC_APP_URL
+    value: https://YOUR_BACKEND_ID--YOUR_PROJECT.us-central1.hosted.app

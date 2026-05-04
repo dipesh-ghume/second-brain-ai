@@ -1,0 +1,57 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../generated/prisma"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [vector]
+}
+
+model Bookmark {
+  id        String   @id @default(cuid())
+  url       String
+  title     String   @db.VarChar(500)
+  content   String   @db.Text
+  summary   String   @db.Text
+  category  String   @default("uncategorized") @db.VarChar(100)
+  favicon   String?
+  tags      Tag[]    @relation("BookmarkTags")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Note {
+  id          String   @id @default(cuid())
+  title       String   @db.VarChar(500)
+  content     String   @db.Text
+  summary     String?  @db.Text
+  actionItems Json?
+  tags        Tag[]    @relation("NoteTags")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Tag {
+  id        String     @id @default(cuid())
+  name      String     @unique @db.VarChar(100)
+  bookmarks Bookmark[] @relation("BookmarkTags")
+  notes     Note[]     @relation("NoteTags")
+}
+
+model Embedding {
+  id         String                      @id @default(cuid())
+  content    String                      @db.Text
+  embedding  Unsupported("vector(768)")?
+  sourceType SourceType
+  sourceId   String                      @unique
+  createdAt  DateTime                    @default(now())
+
+  @@index([sourceType])
+}
+
+enum SourceType {
+  BOOKMARK
+  NOTE
+}
