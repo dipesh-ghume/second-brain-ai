@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { findSimilar } from "@/lib/ai/embeddings";
-import { ollamaChatStream, getOllamaFastModel } from "@/lib/ai/ollama";
+import { ai } from "@/lib/ai/provider";
 import { getRequiredUser } from "@/lib/auth";
 import { handleApiError } from "@/lib/api-utils";
 
@@ -122,45 +122,24 @@ export async function GET(req: NextRequest) {
   const contextText = contextParts.join("\n\n");
 
   const systemPrompt = `You are a knowledge assistant. Answer using ONLY the provided context. Be concise. Reference sources by title.`;
-
   const prompt = `Question: ${q}\n\nContext:\n${contextText}\n\nAnswer concisely.`;
 
-  const encoder = new TextEncoder();
+  try {
+    const answer = await ai.generateText(prompt, systemPrompt, "search_answer");
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      const sourcesEvent = `data: ${JSON.stringify({
-        type: "sources",
-        sources: enrichedSources,
-        query: q,
-        totalMatches: similar.length,
-      })}\n\n`;
-      controller.enqueue(encoder.encode(sourcesEvent));
-
-      const llmStream = ollamaChatStream(prompt, systemPrompt, getOllamaFastModel());
-      const reader = llmStream.getReader();
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const tokenEvent = `data: ${JSON.stringify({ type: "token", token: value })}\n\n`;
-          controller.enqueue(encoder.encode(tokenEvent));
-        }
-      } finally {
-        reader.releaseLock();
-      }
-
-      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done" })}\n\n`));
-      controller.close();
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    },
-  });
+    return NextResponse.json({
+      answer,
+      sources: enrichedSources,
+      query: q,
+      totalMatches: similar.length,
+    });
+  } catch (err) {
+    console.error("Search answer generation failed:", err);
+    return NextResponse.json({
+      answer: "I found relevant sources but couldn't generate an answer. See the sources below.",
+      sources: enrichedSources,
+      query: q,
+      totalMatches: similar.length,
+    });
+  }
 }

@@ -45,7 +45,7 @@ export function ChatInterface() {
 
     try {
       const res = await fetch(
-        `/api/search?q=${encodeURIComponent(query)}&mode=stream`,
+        `/api/search?q=${encodeURIComponent(query)}`,
         { signal: controller.signal }
       );
 
@@ -53,79 +53,18 @@ export function ChatInterface() {
         throw new Error("Search failed");
       }
 
-      const contentType = res.headers.get("Content-Type") ?? "";
-
-      if (contentType.includes("text/event-stream") && res.body) {
-        // SSE streaming response
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
-
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            const payload = line.slice(6);
-
-            try {
-              const event = JSON.parse(payload);
-
-              if (event.type === "sources") {
-                setHistory((prev) => {
-                  const updated = [...prev];
-                  updated[entryIndex] = {
-                    ...updated[entryIndex],
-                    sources: event.sources,
-                    totalMatches: event.totalMatches,
-                  };
-                  return updated;
-                });
-                setLoading(false);
-              } else if (event.type === "token") {
-                setHistory((prev) => {
-                  const updated = [...prev];
-                  updated[entryIndex] = {
-                    ...updated[entryIndex],
-                    answer: updated[entryIndex].answer + event.token,
-                  };
-                  return updated;
-                });
-              } else if (event.type === "done") {
-                setHistory((prev) => {
-                  const updated = [...prev];
-                  updated[entryIndex] = {
-                    ...updated[entryIndex],
-                    streaming: false,
-                  };
-                  return updated;
-                });
-              }
-            } catch {
-              // malformed event, skip
-            }
-          }
-        }
-      } else {
-        // Non-streaming JSON fallback (e.g. empty results)
-        const data = await res.json();
-        setHistory((prev) => {
-          const updated = [...prev];
-          updated[entryIndex] = {
-            query,
-            answer: data.answer ?? "",
-            sources: data.sources ?? [],
-            totalMatches: data.totalMatches ?? (data.sources?.length ?? 0),
-            streaming: false,
-          };
-          return updated;
-        });
-      }
+      const data = await res.json();
+      setHistory((prev) => {
+        const updated = [...prev];
+        updated[entryIndex] = {
+          query,
+          answer: data.answer ?? "",
+          sources: data.sources ?? [],
+          totalMatches: data.totalMatches ?? (data.sources?.length ?? 0),
+          streaming: false,
+        };
+        return updated;
+      });
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
         setError("Search failed. Please try again.");
