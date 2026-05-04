@@ -160,7 +160,7 @@ export const groqEmbeddingService: EmbeddingServiceInterface = {
   async generateEmbedding(text: string): Promise<EmbeddingResult> {
     const client = getClient();
     const res = await client.embeddings.create({
-      model: "nomic-embed-text-v1.5",
+      model: "nomic-embed-text-v1_5",
       input: text.slice(0, 8000),
     });
     const embedding = res.data[0]?.embedding ?? [];
