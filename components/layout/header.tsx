@@ -12,6 +12,7 @@ const pageTitles: Record<string, string> = {
 
 interface HeaderProps {
   onMenuToggle: () => void;
+  user?: { name?: string | null; image?: string | null } | null;
 }
 
 export function Header({ onMenuToggle }: HeaderProps) {

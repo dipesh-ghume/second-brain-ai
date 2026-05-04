@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { findSimilar } from "@/lib/ai/embeddings";
 import { ollamaChatStream, getOllamaFastModel } from "@/lib/ai/ollama";
+import { getRequiredUser } from "@/lib/auth";
+import { handleApiError } from "@/lib/api-utils";
 
 interface EnrichedSource {
   id: string;
@@ -14,7 +16,8 @@ interface EnrichedSource {
 }
 
 async function enrichSources(
-  similar: Awaited<ReturnType<typeof findSimilar>>
+  similar: Awaited<ReturnType<typeof findSimilar>>,
+  userId: string
 ): Promise<EnrichedSource[]> {
   const bookmarkIds = similar
     .filter((h) => h.sourceType === "BOOKMARK")
@@ -26,13 +29,13 @@ async function enrichSources(
   const [bookmarks, notes] = await Promise.all([
     bookmarkIds.length
       ? prisma.bookmark.findMany({
-          where: { id: { in: bookmarkIds } },
+          where: { id: { in: bookmarkIds }, userId },
           select: { id: true, title: true, url: true, summary: true },
         })
       : Promise.resolve([]),
     noteIds.length
       ? prisma.note.findMany({
-          where: { id: { in: noteIds } },
+          where: { id: { in: noteIds }, userId },
           select: { id: true, title: true, summary: true },
         })
       : Promise.resolve([]),
@@ -75,6 +78,8 @@ async function enrichSources(
 }
 
 export async function GET(req: NextRequest) {
+  let user;
+  try { user = await getRequiredUser(); } catch (e) { return handleApiError(e); }
   const q = req.nextUrl.searchParams.get("q");
   const limitParam = req.nextUrl.searchParams.get("limit");
   const limit = Math.min(limitParam ? parseInt(limitParam, 10) : 10, 20);
@@ -87,7 +92,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const similar = await findSimilar(q, limit, 0.05);
+  const similar = await findSimilar(q, limit, 0.05, user.id!);
 
   if (similar.length === 0) {
     return NextResponse.json({
@@ -99,9 +104,8 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const enrichedSources = await enrichSources(similar);
+  const enrichedSources = await enrichSources(similar, user.id!);
 
-  // "sources" mode — return JSON immediately, no AI synthesis
   if (mode === "sources") {
     return NextResponse.json({
       answer: "",
@@ -111,8 +115,6 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // "stream" mode — SSE: emit sources as JSON event, then stream AI answer tokens
-  // Use compact summaries instead of full content to keep prompts small and fast
   const contextParts = enrichedSources.slice(0, 5).map((src) => {
     const text = src.summary || src.snippet || "";
     return `[${src.type}: "${src.title}"]\n${text}`;
@@ -127,7 +129,6 @@ export async function GET(req: NextRequest) {
 
   const stream = new ReadableStream({
     async start(controller) {
-      // 1. Emit sources immediately so the UI can render them
       const sourcesEvent = `data: ${JSON.stringify({
         type: "sources",
         sources: enrichedSources,
@@ -136,7 +137,6 @@ export async function GET(req: NextRequest) {
       })}\n\n`;
       controller.enqueue(encoder.encode(sourcesEvent));
 
-      // 2. Stream AI answer tokens
       const llmStream = ollamaChatStream(prompt, systemPrompt, getOllamaFastModel());
       const reader = llmStream.getReader();
 
@@ -151,7 +151,6 @@ export async function GET(req: NextRequest) {
         reader.releaseLock();
       }
 
-      // 3. Signal completion
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done" })}\n\n`));
       controller.close();
     },

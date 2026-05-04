@@ -4,19 +4,13 @@ import type { SourceType } from "../../generated/prisma/client";
 
 const VECTOR_DIMENSIONS = 768;
 
-/**
- * Ensure vector matches the DB column dimension and L2-normalize
- * so cosine distance is well-defined.
- */
 function prepareVector(raw: number[]): number[] {
   const vec = raw.slice(0, VECTOR_DIMENSIONS);
 
-  // Pad only if absolutely needed (shouldn't happen with matching model)
   while (vec.length < VECTOR_DIMENSIONS) {
     vec.push(0);
   }
 
-  // L2 normalize
   let norm = 0;
   for (const v of vec) norm += v * v;
   norm = Math.sqrt(norm);
@@ -31,7 +25,8 @@ function vectorToSql(vec: number[]): string {
 export async function generateAndStoreEmbedding(
   sourceId: string,
   sourceType: SourceType,
-  content: string
+  content: string,
+  userId: string
 ): Promise<void> {
   const result = await embeddings.generate(content);
   if (!result.embedding.length) {
@@ -42,13 +37,13 @@ export async function generateAndStoreEmbedding(
   const vecSql = vectorToSql(prepared);
   const storedContent = content.slice(0, 5000);
 
-  // Upsert: insert or update if sourceId already exists
   await prisma.$executeRaw`
-    INSERT INTO "Embedding" (id, content, embedding, "sourceType", "sourceId", "createdAt")
-    VALUES (gen_random_uuid(), ${storedContent}, ${vecSql}::vector, ${sourceType}::"SourceType", ${sourceId}, NOW())
+    INSERT INTO "Embedding" (id, content, embedding, "sourceType", "sourceId", "userId", "createdAt")
+    VALUES (gen_random_uuid(), ${storedContent}, ${vecSql}::vector, ${sourceType}::"SourceType", ${sourceId}, ${userId}, NOW())
     ON CONFLICT ("sourceId") DO UPDATE SET
       content    = EXCLUDED.content,
       embedding  = EXCLUDED.embedding,
+      "userId"   = EXCLUDED."userId",
       "createdAt" = NOW()
   `;
 }
@@ -70,7 +65,8 @@ export interface SimilarResult {
 export async function findSimilar(
   queryText: string,
   limit: number = 10,
-  minSimilarity: number = 0.0
+  minSimilarity: number = 0.0,
+  userId: string
 ): Promise<SimilarResult[]> {
   const result = await embeddings.generate(queryText);
   if (!result.embedding.length) return [];
@@ -78,8 +74,6 @@ export async function findSimilar(
   const prepared = prepareVector(result.embedding);
   const vecSql = vectorToSql(prepared);
 
-  // cosine distance: <=> returns distance in [0,2], similarity = 1 - distance
-  // SET hnsw.ef_search for recall quality (higher = more accurate, slower)
   await prisma.$executeRaw`SET hnsw.ef_search = 80`;
 
   const rows = await prisma.$queryRaw<SimilarResult[]>`
@@ -90,7 +84,7 @@ export async function findSimilar(
       "sourceId"   AS "sourceId",
       1 - (embedding <=> ${vecSql}::vector) AS similarity
     FROM "Embedding"
-    WHERE embedding IS NOT NULL
+    WHERE embedding IS NOT NULL AND "userId" = ${userId}
     ORDER BY embedding <=> ${vecSql}::vector
     LIMIT ${limit}
   `;
@@ -98,20 +92,20 @@ export async function findSimilar(
   return rows.filter((r) => r.similarity >= minSimilarity);
 }
 
-export async function getEmbeddingStats(): Promise<{
+export async function getEmbeddingStats(userId: string): Promise<{
   total: number;
   byType: Record<string, number>;
   indexed: number;
 }> {
   const [countResult, typeResult, indexedResult] = await Promise.all([
     prisma.$queryRaw<[{ count: bigint }]>`
-      SELECT COUNT(*) as count FROM "Embedding"
+      SELECT COUNT(*) as count FROM "Embedding" WHERE "userId" = ${userId}
     `,
     prisma.$queryRaw<Array<{ sourceType: string; count: bigint }>>`
-      SELECT "sourceType", COUNT(*) as count FROM "Embedding" GROUP BY "sourceType"
+      SELECT "sourceType", COUNT(*) as count FROM "Embedding" WHERE "userId" = ${userId} GROUP BY "sourceType"
     `,
     prisma.$queryRaw<[{ count: bigint }]>`
-      SELECT COUNT(*) as count FROM "Embedding" WHERE embedding IS NOT NULL
+      SELECT COUNT(*) as count FROM "Embedding" WHERE embedding IS NOT NULL AND "userId" = ${userId}
     `,
   ]);
 

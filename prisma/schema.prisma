@@ -9,6 +9,47 @@ datasource db {
   extensions = [vector]
 }
 
+model User {
+  id            String      @id @default(cuid())
+  name          String?
+  email         String?     @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  bookmarks     Bookmark[]
+  notes         Note[]
+  embeddings    Embedding[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
 model Bookmark {
   id        String   @id @default(cuid())
   url       String
@@ -17,9 +58,13 @@ model Bookmark {
   summary   String   @db.Text
   category  String   @default("uncategorized") @db.VarChar(100)
   favicon   String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   tags      Tag[]    @relation("BookmarkTags")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model Note {
@@ -28,9 +73,13 @@ model Note {
   content     String   @db.Text
   summary     String?  @db.Text
   actionItems Json?
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   tags        Tag[]    @relation("NoteTags")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model Tag {
@@ -46,9 +95,12 @@ model Embedding {
   embedding  Unsupported("vector(768)")?
   sourceType SourceType
   sourceId   String                      @unique
+  userId     String
+  user       User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt  DateTime                    @default(now())
 
   @@index([sourceType])
+  @@index([userId])
 }
 
 enum SourceType {

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signOut } from "next-auth/react";
 
 const navItems = [
   {
@@ -51,12 +52,19 @@ const navItems = [
   },
 ];
 
+interface UserInfo {
+  name?: string | null;
+  email?: string | null;
+  image?: string | null;
+}
+
 interface SidebarProps {
   open: boolean;
   onClose: () => void;
+  user: UserInfo | null;
 }
 
-export function Sidebar({ open, onClose }: SidebarProps) {
+export function Sidebar({ open, onClose, user }: SidebarProps) {
   const pathname = usePathname();
 
   return (
@@ -115,15 +123,47 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           })}
         </nav>
 
-        <div className="px-3 py-4 border-t border-white/10">
-          <div className="px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: "var(--sidebar-hover)", color: "var(--sidebar-text)" }}>
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              <span className="font-medium text-white">AI Status</span>
+        {user && (
+          <div className="px-3 py-4 border-t border-white/10">
+            <div className="flex items-center gap-3 px-3 py-2">
+              {user.image ? (
+                <img
+                  src={user.image}
+                  alt={user.name ?? "User"}
+                  className="w-8 h-8 rounded-full"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium text-white"
+                  style={{ backgroundColor: "var(--accent)" }}
+                >
+                  {user.name?.charAt(0) ?? "U"}
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white truncate">
+                  {user.name ?? "User"}
+                </p>
+                <p className="text-xs truncate" style={{ color: "var(--sidebar-text)" }}>
+                  {user.email}
+                </p>
+              </div>
             </div>
-            <p>Ollama Connected</p>
+            <button
+              onClick={() => signOut({ callbackUrl: "/auth/signin" })}
+              className="mt-2 w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+              style={{ color: "var(--sidebar-text)" }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--sidebar-hover)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+              </svg>
+              Sign out
+            </button>
           </div>
-        </div>
+        )}
       </aside>
     </>
   );

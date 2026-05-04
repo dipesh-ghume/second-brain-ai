@@ -1,21 +1,32 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { ai } from "@/lib/ai/provider";
+import { getRequiredUser } from "@/lib/auth";
+import { handleApiError } from "@/lib/api-utils";
 
 export async function GET() {
+  let user;
+  try { user = await getRequiredUser(); } catch (e) { return handleApiError(e); }
+
   const oneWeekAgo = new Date();
   oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
 
   const [recentBookmarks, recentNotes, topTags] = await Promise.all([
     prisma.bookmark.findMany({
-      where: { createdAt: { gte: oneWeekAgo } },
+      where: { userId: user.id, createdAt: { gte: oneWeekAgo } },
       select: { title: true, summary: true, category: true },
     }),
     prisma.note.findMany({
-      where: { createdAt: { gte: oneWeekAgo } },
+      where: { userId: user.id, createdAt: { gte: oneWeekAgo } },
       select: { title: true, summary: true },
     }),
     prisma.tag.findMany({
+      where: {
+        OR: [
+          { bookmarks: { some: { userId: user.id } } },
+          { notes: { some: { userId: user.id } } },
+        ],
+      },
       include: { _count: { select: { bookmarks: true, notes: true } } },
       orderBy: { bookmarks: { _count: "desc" } },
       take: 10,

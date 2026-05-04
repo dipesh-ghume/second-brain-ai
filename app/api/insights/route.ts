@@ -1,15 +1,22 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { ai } from "@/lib/ai/provider";
+import { getRequiredUser } from "@/lib/auth";
+import { handleApiError } from "@/lib/api-utils";
 
 export async function GET() {
+  let user;
+  try { user = await getRequiredUser(); } catch (e) { return handleApiError(e); }
+
   const [bookmarks, notes] = await Promise.all([
     prisma.bookmark.findMany({
+      where: { userId: user.id },
       take: 20,
       orderBy: { createdAt: "desc" },
       select: { title: true, summary: true, category: true },
     }),
     prisma.note.findMany({
+      where: { userId: user.id },
       take: 20,
       orderBy: { createdAt: "desc" },
       select: { title: true, summary: true },

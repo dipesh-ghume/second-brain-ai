@@ -5,6 +5,8 @@ import { generateAndStoreEmbedding } from "@/lib/ai/embeddings";
 import { fetchUrlContent } from "@/lib/utils/content-fetcher";
 import { isYouTubeUrl, fetchYouTubeContent } from "@/lib/utils/youtube";
 import { parseBookmarkHtml } from "@/lib/utils/bookmark-parser";
+import { getRequiredUser } from "@/lib/auth";
+import { handleApiError } from "@/lib/api-utils";
 
 interface ImportedItem {
   url: string;
@@ -13,13 +15,9 @@ interface ImportedItem {
   error?: string;
 }
 
-/**
- * POST /api/bookmarks/import
- * Accepts raw bookmark HTML (exported from any browser) in the request body.
- * Parses it, deduplicates against existing bookmarks, and imports new ones.
- * AI summarization runs in the background so the response returns quickly.
- */
 export async function POST(req: NextRequest) {
+  let user;
+  try { user = await getRequiredUser(); } catch (e) { return handleApiError(e); }
   const contentType = req.headers.get("content-type") ?? "";
 
   let html: string;
@@ -47,8 +45,8 @@ export async function POST(req: NextRequest) {
     }, { status: 422 });
   }
 
-  // Get all existing URLs to detect duplicates in one query
   const existingBookmarks = await prisma.bookmark.findMany({
+    where: { userId: user.id },
     select: { url: true },
   });
   const existingUrls = new Set(existingBookmarks.map((b) => normalizeUrl(b.url)));
@@ -68,7 +66,6 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      // Save with browser title immediately (no AI wait)
       const bookmark = await prisma.bookmark.create({
         data: {
           url: entry.url,
@@ -77,6 +74,7 @@ export async function POST(req: NextRequest) {
           summary: "Processing...",
           category: entry.folder?.split(" / ").pop() ?? "imported",
           favicon: null,
+          userId: user.id!,
         },
       });
 
@@ -85,8 +83,7 @@ export async function POST(req: NextRequest) {
       results.push({ url: entry.url, title: entry.title, status: "imported" });
       imported++;
 
-      // Queue AI enrichment in background — don't block the response
-      enrichBookmarkInBackground(bookmark.id, entry.url);
+      enrichBookmarkInBackground(bookmark.id, entry.url, user.id!);
     } catch (err) {
       results.push({
         url: entry.url,
@@ -111,7 +108,6 @@ export async function POST(req: NextRequest) {
 function normalizeUrl(url: string): string {
   try {
     const u = new URL(url);
-    // Strip trailing slash, www prefix, and fragment for dedup
     let host = u.hostname.replace(/^www\./, "");
     let path = u.pathname.replace(/\/+$/, "");
     return `${u.protocol}//${host}${path}${u.search}`.toLowerCase();
@@ -120,11 +116,7 @@ function normalizeUrl(url: string): string {
   }
 }
 
-/**
- * Runs in the background after the import response is sent.
- * Fetches content, generates AI summary/tags, and creates embeddings.
- */
-function enrichBookmarkInBackground(bookmarkId: string, url: string): void {
+function enrichBookmarkInBackground(bookmarkId: string, url: string, userId: string): void {
   (async () => {
     try {
       let fetched;
@@ -180,11 +172,11 @@ function enrichBookmarkInBackground(bookmarkId: string, url: string): void {
       await generateAndStoreEmbedding(
         bookmarkId,
         "BOOKMARK",
-        `${fetched.title}\n${summary}\n${(fetched.content || "").slice(0, 3000)}`
+        `${fetched.title}\n${summary}\n${(fetched.content || "").slice(0, 3000)}`,
+        userId
       );
     } catch (err) {
       console.error(`Background enrichment failed for bookmark ${bookmarkId}:`, err);
-      // Update the bookmark to show the error state
       await prisma.bookmark.update({
         where: { id: bookmarkId },
         data: { summary: "AI processing failed. Content may be unavailable." },

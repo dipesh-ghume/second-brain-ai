@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { getRequiredUser } from "@/lib/auth";
+import { handleApiError } from "@/lib/api-utils";
 
 export async function GET() {
+  let user;
+  try { user = await getRequiredUser(); } catch (e) { return handleApiError(e); }
+
   const [
     totalNotes,
     totalBookmarks,
@@ -10,16 +15,18 @@ export async function GET() {
     recentBookmarks,
     recentNotes,
   ] = await Promise.all([
-    prisma.note.count(),
-    prisma.bookmark.count(),
+    prisma.note.count({ where: { userId: user.id } }),
+    prisma.bookmark.count({ where: { userId: user.id } }),
     prisma.tag.count(),
-    prisma.embedding.count(),
+    prisma.embedding.count({ where: { userId: user.id } }),
     prisma.bookmark.findMany({
+      where: { userId: user.id },
       take: 5,
       orderBy: { createdAt: "desc" },
       select: { id: true, title: true, url: true, category: true, createdAt: true },
     }),
     prisma.note.findMany({
+      where: { userId: user.id },
       take: 5,
       orderBy: { createdAt: "desc" },
       select: { id: true, title: true, createdAt: true },

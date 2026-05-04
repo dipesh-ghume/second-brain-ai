@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { NoteEditor } from "@/components/notes/note-editor";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { AIProcessing } from "@/components/ui/loading";
 
@@ -40,10 +39,15 @@ export default function NewNotePage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>New Note</h1>
-        <div className="flex gap-2">
+    <div className="max-w-4xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>New Note</h1>
+          <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
+            Capture your thoughts — AI will summarize and tag automatically
+          </p>
+        </div>
+        <div className="flex gap-3">
           <Button variant="secondary" onClick={() => router.push("/notes")}>Cancel</Button>
           <Button onClick={handleSave} loading={saving} disabled={!title.trim() || !content.trim()}>
             Save Note
@@ -54,19 +58,33 @@ export default function NewNotePage() {
       {saving && <AIProcessing message="Saving note and generating AI summary..." />}
 
       {error && (
-        <div className="p-3 rounded-lg border" style={{ borderColor: "var(--error)", backgroundColor: "rgba(239,68,68,0.05)" }}>
-          <p className="text-sm" style={{ color: "var(--error)" }}>{error}</p>
+        <div className="mb-4 p-4 rounded-xl border" style={{ borderColor: "var(--error)", backgroundColor: "rgba(239,68,68,0.08)" }}>
+          <p className="text-sm font-medium" style={{ color: "var(--error)" }}>{error}</p>
         </div>
       )}
 
-      <Input
-        placeholder="Note title..."
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        className="text-lg font-semibold"
-      />
+      <div
+        className="rounded-xl border overflow-hidden shadow-sm"
+        style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-primary)" }}
+      >
+        <div className="px-6 pt-5 pb-3">
+          <input
+            type="text"
+            placeholder="Give your note a title..."
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full text-xl font-semibold bg-transparent border-none outline-none placeholder:font-normal"
+            style={{
+              color: "var(--text-primary)",
+            }}
+          />
+          <div className="mt-3 h-px" style={{ backgroundColor: "var(--border)" }} />
+        </div>
 
-      <NoteEditor content={content} onChange={setContent} placeholder="Start writing your thoughts..." />
+        <div className="px-2 pb-2">
+          <NoteEditor content={content} onChange={setContent} placeholder="Start writing your thoughts..." />
+        </div>
+      </div>
     </div>
   );
 }

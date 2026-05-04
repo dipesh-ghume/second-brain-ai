@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { generateAndStoreEmbedding, getEmbeddingStats } from "@/lib/ai/embeddings";
 import { stripHtml } from "@/lib/utils/text";
+import { getRequiredUser } from "@/lib/auth";
+import { handleApiError } from "@/lib/api-utils";
 
 function buildBookmarkText(b: { title: string; summary: string; content: string }): string {
   return [b.title, b.summary, b.content.slice(0, 3000)].filter(Boolean).join("\n");
@@ -13,10 +15,12 @@ function buildNoteText(n: { title: string; summary: string | null; content: stri
 }
 
 export async function GET() {
-  const stats = await getEmbeddingStats();
+  let user;
+  try { user = await getRequiredUser(); } catch (e) { return handleApiError(e); }
+  const stats = await getEmbeddingStats(user.id!);
   const [bookmarkCount, noteCount] = await Promise.all([
-    prisma.bookmark.count(),
-    prisma.note.count(),
+    prisma.bookmark.count({ where: { userId: user.id } }),
+    prisma.note.count({ where: { userId: user.id } }),
   ]);
 
   return NextResponse.json({
@@ -29,19 +33,24 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  let user;
+  try { user = await getRequiredUser(); } catch (e) { return handleApiError(e); }
   const body = await req.json().catch(() => ({}));
   const forceRecompute = (body as { force?: boolean }).force === true;
 
   const existingEmbeddings = await prisma.embedding.findMany({
+    where: { userId: user.id },
     select: { sourceId: true },
   });
   const embeddedIds = new Set(existingEmbeddings.map((e) => e.sourceId));
 
   const [bookmarks, notes] = await Promise.all([
     prisma.bookmark.findMany({
+      where: { userId: user.id },
       select: { id: true, title: true, summary: true, content: true },
     }),
     prisma.note.findMany({
+      where: { userId: user.id },
       select: { id: true, title: true, summary: true, content: true },
     }),
   ]);
@@ -61,7 +70,8 @@ export async function POST(req: NextRequest) {
       await generateAndStoreEmbedding(
         bookmark.id,
         "BOOKMARK",
-        buildBookmarkText(bookmark)
+        buildBookmarkText(bookmark),
+        user.id!
       );
       processed++;
     } catch (err) {
@@ -74,7 +84,8 @@ export async function POST(req: NextRequest) {
       await generateAndStoreEmbedding(
         note.id,
         "NOTE",
-        buildNoteText(note)
+        buildNoteText(note),
+        user.id!
       );
       processed++;
     } catch (err) {
@@ -82,7 +93,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const stats = await getEmbeddingStats();
+  const stats = await getEmbeddingStats(user.id!);
 
   return NextResponse.json({
     processed,

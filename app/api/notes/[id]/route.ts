@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db/prisma";
 import { ai } from "@/lib/ai/provider";
 import { generateAndStoreEmbedding, deleteEmbedding } from "@/lib/ai/embeddings";
 import { stripHtml } from "@/lib/utils/text";
+import { getRequiredUser } from "@/lib/auth";
+import { handleApiError } from "@/lib/api-utils";
 
 function buildEmbeddingText(title: string, summary: string | null, plainContent: string): string {
   return [title, summary ?? "", plainContent.slice(0, 3000)].filter(Boolean).join("\n");
@@ -12,9 +14,11 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let user;
+  try { user = await getRequiredUser(); } catch (e) { return handleApiError(e); }
   const { id } = await params;
-  const note = await prisma.note.findUnique({
-    where: { id },
+  const note = await prisma.note.findFirst({
+    where: { id, userId: user.id },
     include: { tags: true },
   });
 
@@ -29,7 +33,15 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let user;
+  try { user = await getRequiredUser(); } catch (e) { return handleApiError(e); }
   const { id } = await params;
+
+  const existing = await prisma.note.findFirst({ where: { id, userId: user.id } });
+  if (!existing) {
+    return NextResponse.json({ error: "Note not found" }, { status: 404 });
+  }
+
   const body = await req.json();
   const { title, content } = body as { title: string; content: string };
 
@@ -63,11 +75,11 @@ export async function PUT(
     include: { tags: true },
   });
 
-  // Recompute embedding on update (upsert handles overwrite)
   generateAndStoreEmbedding(
     note.id,
     "NOTE",
-    buildEmbeddingText(note.title, note.summary, plainText)
+    buildEmbeddingText(note.title, note.summary, plainText),
+    user.id!
   ).catch((err) => console.error("Embedding recompute failed:", err));
 
   return NextResponse.json(note);
@@ -77,7 +89,15 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let user;
+  try { user = await getRequiredUser(); } catch (e) { return handleApiError(e); }
   const { id } = await params;
+
+  const existing = await prisma.note.findFirst({ where: { id, userId: user.id } });
+  if (!existing) {
+    return NextResponse.json({ error: "Note not found" }, { status: 404 });
+  }
+
   await deleteEmbedding(id);
   await prisma.note.delete({ where: { id } });
   return NextResponse.json({ success: true });
