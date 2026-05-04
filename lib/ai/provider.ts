@@ -1,4 +1,4 @@
-import type { AIServiceInterface, AIResponse, AIProviderType, TaskType, EmbeddingServiceInterface, EmbeddingResult } from "./types";
+import type { AIServiceInterface, AIProviderType, TaskType, EmbeddingServiceInterface, EmbeddingResult } from "./types";
 import { ollamaService, ollamaEmbeddingService } from "./ollama";
 import { openaiService, openaiEmbeddingService } from "./openai";
 import { groqService, groqEmbeddingService } from "./groq";
@@ -15,69 +15,89 @@ function hasGroq(): boolean {
   return !!process.env.GROQ_API_KEY;
 }
 
+function hasOllama(): boolean {
+  return !!process.env.OLLAMA_BASE_URL || getProviderType() === "ollama";
+}
+
+function getAvailableProvider(): AIServiceInterface | null {
+  if (hasGroq()) return groqService;
+  if (hasOpenAI()) return openaiService;
+  if (hasOllama()) return ollamaService;
+  return null;
+}
+
+function getAvailableEmbeddingProvider(): EmbeddingServiceInterface | null {
+  if (hasGroq()) return groqEmbeddingService;
+  if (hasOpenAI()) return openaiEmbeddingService;
+  if (hasOllama()) return ollamaEmbeddingService;
+  return null;
+}
+
 function selectProvider(taskType: TaskType, textLength: number = 0): AIServiceInterface {
   const providerType = getProviderType();
 
   if (providerType === "groq" && hasGroq()) return groqService;
-  if (providerType === "groq") return ollamaService;
   if (providerType === "openai" && hasOpenAI()) return openaiService;
-  if (providerType === "openai") return ollamaService;
   if (providerType === "ollama") return ollamaService;
 
-  // "smart" mode: use best available provider for complex tasks
-  if (taskType === "weekly_report" || taskType === "insights" || taskType === "search_answer") {
-    if (hasOpenAI()) return openaiService;
-    if (hasGroq()) return groqService;
+  if (providerType === "smart") {
+    if (taskType === "weekly_report" || taskType === "insights" || taskType === "search_answer") {
+      if (hasOpenAI()) return openaiService;
+      if (hasGroq()) return groqService;
+    }
+    if (taskType === "action_items" || (taskType === "summarize" && textLength > 4000)) {
+      if (hasOpenAI()) return openaiService;
+      if (hasGroq()) return groqService;
+    }
   }
-  if (taskType === "action_items" || (taskType === "summarize" && textLength > 4000)) {
-    if (hasOpenAI()) return openaiService;
-    if (hasGroq()) return groqService;
-  }
-  return ollamaService;
+
+  const fallback = getAvailableProvider();
+  if (fallback) return fallback;
+
+  throw new Error("No AI provider available. Set AI_PROVIDER and provide the required API key.");
 }
 
 function selectEmbeddingProvider(): EmbeddingServiceInterface {
   const providerType = getProviderType();
-  if ((providerType === "openai" || providerType === "smart") && hasOpenAI()) {
-    return openaiEmbeddingService;
-  }
-  if (providerType === "groq" && hasGroq()) {
-    return groqEmbeddingService;
-  }
-  if (providerType === "groq" && hasOpenAI()) {
-    return openaiEmbeddingService;
-  }
-  return ollamaEmbeddingService;
+
+  if (providerType === "groq" && hasGroq()) return groqEmbeddingService;
+  if (providerType === "openai" && hasOpenAI()) return openaiEmbeddingService;
+  if (providerType === "ollama") return ollamaEmbeddingService;
+
+  const fallback = getAvailableEmbeddingProvider();
+  if (fallback) return fallback;
+
+  throw new Error("No embedding provider available. Set AI_PROVIDER and provide the required API key.");
 }
 
 function getFallbackProvider(primary: AIServiceInterface): AIServiceInterface | null {
-  if (primary === ollamaService) {
-    if (hasGroq()) return groqService;
-    if (hasOpenAI()) return openaiService;
-  }
   if (primary === groqService) {
     if (hasOpenAI()) return openaiService;
-    return ollamaService;
+    if (hasOllama()) return ollamaService;
   }
   if (primary === openaiService) {
     if (hasGroq()) return groqService;
-    return ollamaService;
+    if (hasOllama()) return ollamaService;
+  }
+  if (primary === ollamaService) {
+    if (hasGroq()) return groqService;
+    if (hasOpenAI()) return openaiService;
   }
   return null;
 }
 
 function getFallbackEmbeddingProvider(primary: EmbeddingServiceInterface): EmbeddingServiceInterface | null {
-  if (primary === ollamaEmbeddingService) {
-    if (hasGroq()) return groqEmbeddingService;
-    if (hasOpenAI()) return openaiEmbeddingService;
-  }
   if (primary === groqEmbeddingService) {
     if (hasOpenAI()) return openaiEmbeddingService;
-    return ollamaEmbeddingService;
+    if (hasOllama()) return ollamaEmbeddingService;
   }
   if (primary === openaiEmbeddingService) {
     if (hasGroq()) return groqEmbeddingService;
-    return ollamaEmbeddingService;
+    if (hasOllama()) return ollamaEmbeddingService;
+  }
+  if (primary === ollamaEmbeddingService) {
+    if (hasGroq()) return groqEmbeddingService;
+    if (hasOpenAI()) return openaiEmbeddingService;
   }
   return null;
 }
@@ -108,7 +128,7 @@ export const ai = {
     );
   },
 
-  async summarizeText(text: string): Promise<AIResponse> {
+  async summarizeText(text: string) {
     const provider = selectProvider("summarize", text.length);
     const fb = getFallbackProvider(provider);
     return withFallback(
